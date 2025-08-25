@@ -27,7 +27,7 @@ An intelligent Sales Development Representative system leveraging Grok's API to 
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- Grok API key (get $20 free credits with promo code "grokeng" at console.x.ai)
+- Grok API key
 - Git
 
 ## Quick Start
