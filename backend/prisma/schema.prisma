@@ -1,0 +1,252 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Core lead management
+model Lead {
+  id            String   @id @default(cuid())
+  companyName   String
+  contactName   String
+  email         String   @unique
+  phone         String?
+  website       String?
+  linkedinUrl   String?
+  
+  // Scoring and qualification
+  score         Float    @default(0)
+  stage         LeadStage @default(NEW)
+  qualificationNotes String? @db.Text
+  budget        String?  // Budget information
+  source        String?  // Lead source
+  notes         String?  @db.Text // General notes
+  
+  // Company metadata for Grok analysis
+  companyData   Json?    // Industry, size, location, etc.
+  enrichedData  Json?    // Data from Grok enrichment
+  
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastContactedAt DateTime?
+  
+  // Relations
+  activities    Activity[]
+  messages      Message[]
+  scoringHistory LeadScoring[]
+  conversations Conversation[]
+  
+  @@index([stage])
+  @@index([score])
+}
+
+// User-defined scoring criteria
+model ScoringCriteria {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  
+  // Weights for different factors (0-100)
+  industryWeight  Int      @default(20)
+  companySizeWeight Int    @default(20)
+  engagementWeight Int     @default(30)
+  budgetWeight    Int      @default(20)
+  timingWeight    Int      @default(10)
+  
+  // Custom criteria as JSON
+  customCriteria  Json?
+  
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Track lead scoring history
+model LeadScoring {
+  id              String   @id @default(cuid())
+  leadId          String
+  lead            Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  score           Float
+  scoringDetails  Json     // Breakdown of score calculation
+  criteriaUsed    String   // Reference to criteria name
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([leadId])
+}
+
+// Activity tracking for leads
+model Activity {
+  id          String       @id @default(cuid())
+  leadId      String
+  lead        Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  type        ActivityType
+  description String       @db.Text
+  metadata    Json?        // Additional activity data
+  
+  createdAt   DateTime     @default(now())
+  
+  @@index([leadId])
+  @@index([type])
+}
+
+// Message templates and sent messages
+model MessageTemplate {
+  id          String    @id @default(cuid())
+  name        String
+  subject     String?
+  content     String    @db.Text
+  variables   String[]  // List of variables like {{company_name}}
+  
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  messages    Message[]
+}
+
+model Message {
+  id            String          @id @default(cuid())
+  leadId        String
+  lead          Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  templateId    String?
+  template      MessageTemplate? @relation(fields: [templateId], references: [id])
+  
+  subject       String?
+  content       String          @db.Text
+  personalizedContent String?    @db.Text // Grok-generated version
+  
+  status        MessageStatus   @default(DRAFT)
+  sentAt        DateTime?
+  openedAt      DateTime?
+  repliedAt     DateTime?
+  
+  createdAt     DateTime        @default(now())
+  
+  @@index([leadId])
+  @@index([status])
+}
+
+// Conversation history for search
+model Conversation {
+  id          String   @id @default(cuid())
+  leadId      String?
+  lead        Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  content     String   @db.Text
+  metadata    Json?    // Searchable metadata
+  summary     String?  @db.Text // Grok-generated summary
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([leadId])
+}
+
+// Evaluation framework tables
+model EvaluationTest {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  
+  testType        TestType
+  inputData       Json
+  expectedOutput  Json
+  
+  createdAt       DateTime @default(now())
+  
+  results         EvaluationResult[]
+}
+
+model EvaluationResult {
+  id              String         @id @default(cuid())
+  testId          String
+  test            EvaluationTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+  
+  promptVersion   String
+  actualOutput    Json
+  performanceScore Float         // 0-100
+  
+  executionTime   Int           // in milliseconds
+  tokenCount      Int?
+  errorMessage    String?
+  
+  analysis        Json?         // Detailed analysis of performance
+  recommendations String?       @db.Text
+  
+  createdAt       DateTime      @default(now())
+  
+  @@index([testId])
+  @@index([promptVersion])
+}
+
+model PromptTemplate {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  version       String
+  
+  purpose       PromptPurpose
+  template      String   @db.Text
+  
+  successRate   Float    @default(0)
+  usageCount    Int      @default(0)
+  
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([purpose])
+}
+
+// Enums
+enum LeadStage {
+  NEW
+  QUALIFIED
+  CONTACTED
+  MEETING_SCHEDULED
+  PROPOSAL_SENT
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum ActivityType {
+  EMAIL_SENT
+  EMAIL_RECEIVED
+  CALL_MADE
+  CALL_RECEIVED
+  MEETING_HELD
+  NOTE_ADDED
+  STAGE_CHANGED
+  SCORE_UPDATED
+}
+
+enum MessageStatus {
+  DRAFT
+  SENT
+  DELIVERED
+  OPENED
+  REPLIED
+  BOUNCED
+}
+
+enum TestType {
+  LEAD_QUALIFICATION
+  MESSAGE_PERSONALIZATION
+  COMPANY_RESEARCH
+  SCORING_ACCURACY
+  RESPONSE_GENERATION
+}
+
+enum PromptPurpose {
+  LEAD_QUALIFICATION
+  MESSAGE_PERSONALIZATION
+  COMPANY_ENRICHMENT
+  SCORING_ANALYSIS
+  CONVERSATION_SUMMARY
+}
