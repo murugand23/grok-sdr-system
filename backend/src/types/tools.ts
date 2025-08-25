@@ -1,4 +1,4 @@
-// Tool type definitions following ZAMS pattern
+// Tool type definitions
 export interface GrokToolParameters {
   type: 'object';
   properties: {

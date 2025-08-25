@@ -73,7 +73,21 @@ This will:
 - Start the backend API on http://localhost:3001
 - Start the frontend on http://localhost:3000
 
-### 4. Access the Application
+### 4. (Optional) Seed Sample Data
+
+The database starts empty. To add sample data for testing:
+
+```bash
+# Run this after the containers are up
+docker-compose exec backend npm run seed
+```
+
+This will add:
+- Sample leads with different scores and stages
+- Default scoring criteria
+- Sample message template
+
+### 5. Access the Application
 
 Open your browser and navigate to:
 - Frontend: http://localhost:3000

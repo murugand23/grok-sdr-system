@@ -72,60 +72,161 @@ export class ToolRegistry {
           const parseCriteria = (text: string) => {
             const criteria = {
               minEmployees: 0,
+              employeeRanges: [] as { min: number, max?: number, points: number }[],
               targetIndustries: [] as string[],
-              minBudget: 0
+              minBudget: 0,
+              weights: {
+                size: 40,
+                industry: 30,
+                intent: 30
+              }
             };
             
-            // Parse employee count
-            const empMatch = text.match(/(\d+)\+?\s*employees/i);
-            if (empMatch) criteria.minEmployees = parseInt(empMatch[1]);
-            
-            // Parse industries - extract any word that comes before/after industry markers
-            const industries = [];
-            
-            // Look for patterns like "Tech/SaaS", "Finance or Healthcare", "Technology, Media"
-            // Common industry keywords and separators
-            const industryPattern = /([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s*(?:[,/]|or|and)\s*([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)/g;
-            let match;
-            while ((match = industryPattern.exec(text)) !== null) {
-              if (match[1]) industries.push(match[1].trim());
-              if (match[2]) industries.push(match[2].trim());
+            // Parse weights if specified (e.g., "Size=40%, Industry=30%, Intent=30%" or "Size=40, Industry=30")
+            // First try percentage pattern
+            const percentPattern = /(?:Size|size|Company Size)[\s=:]+(\d+)%|(?:Industry|industry)[\s=:]+(\d+)%|(?:Intent|intent|Budget)[\s=:]+(\d+)%/gi;
+            let percentMatch;
+            let foundWeights = false;
+            while ((percentMatch = percentPattern.exec(text)) !== null) {
+              if (percentMatch[1]) { criteria.weights.size = parseInt(percentMatch[1]); foundWeights = true; }
+              if (percentMatch[2]) { criteria.weights.industry = parseInt(percentMatch[2]); foundWeights = true; }
+              if (percentMatch[3]) { criteria.weights.intent = parseInt(percentMatch[3]); foundWeights = true; }
             }
             
-            // Also look for single industries with context words like "industry", "sector", "companies"
-            const singleIndustryPattern = /([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:industry|sector|companies)/gi;
-            while ((match = singleIndustryPattern.exec(text)) !== null) {
-              if (match[1] && !industries.includes(match[1].trim())) {
-                industries.push(match[1].trim());
+            // If no percentages found, try direct point values
+            if (!foundWeights) {
+              const pointPattern = /(?:Size|size|Company Size)[\s=:]+(\d+)(?!\s*%)|(?:Industry|industry)[\s=:]+(\d+)(?!\s*%)|(?:Intent|intent|Budget)[\s=:]+(\d+)(?!\s*%)/gi;
+              let pointMatch;
+              while ((pointMatch = pointPattern.exec(text)) !== null) {
+                if (pointMatch[1]) criteria.weights.size = parseInt(pointMatch[1]);
+                if (pointMatch[2]) criteria.weights.industry = parseInt(pointMatch[2]);
+                if (pointMatch[3]) criteria.weights.intent = parseInt(pointMatch[3]);
               }
             }
             
-            // If no industries found with patterns, extract capitalized words that might be industries
+            // Parse employee count ranges with points
+            // Parse patterns for size thresholds
+            console.log('[CRITERIA] Parsing employee ranges from:', text);
+            
+            // Look for ">100 employees" patterns
+            const overPatterns = text.matchAll(/(?:>|over|above)\s*(\d+)\s*(?:employees)?/gi);
+            for (const match of overPatterns) {
+              const threshold = parseInt(match[1]);
+              let points = 40; // default high score
+              
+              // Look for point assignment near this threshold
+              const pointPattern = new RegExp(`>${threshold}[^.]*?(\\d+)[-–](\\d+)`, 'i');
+              const pointMatch = text.match(pointPattern);
+              if (pointMatch) {
+                points = (parseInt(pointMatch[1]) + parseInt(pointMatch[2])) / 2;
+              } else if (text.toLowerCase().includes(`>${threshold}`) && text.toLowerCase().includes('high')) {
+                points = 40;
+              } else if (text.toLowerCase().includes(`>${threshold}`) && text.toLowerCase().includes('medium')) {
+                points = 25;
+              }
+              
+              criteria.employeeRanges.push({ min: threshold, points });
+              console.log('[CRITERIA] Added range: >', threshold, 'points:', points);
+            }
+            
+            // Look for "under 30" patterns
+            const underPatterns = text.matchAll(/(?:under|below|<)\s*(\d+)\s*(?:employees)?/gi);
+            for (const match of underPatterns) {
+              const threshold = parseInt(match[1]);
+              let points = 5; // default low score
+              
+              // Look for point assignment near this threshold
+              const pointPattern = new RegExp(`(?:under|<)\\s*${threshold}[^.]*?(\\d+)[-–](\\d+)`, 'i');
+              const pointMatch = text.match(pointPattern);
+              if (pointMatch) {
+                points = (parseInt(pointMatch[1]) + parseInt(pointMatch[2])) / 2;
+              }
+              
+              criteria.employeeRanges.push({ min: 0, max: threshold, points });
+              console.log('[CRITERIA] Added range: under', threshold, 'points:', points);
+            }
+            
+            // Fallback to simple employee match if no ranges found
+            if (criteria.employeeRanges.length === 0) {
+              const empMatch = text.match(/(\d+)\+?\s*employees/i);
+              if (empMatch) criteria.minEmployees = parseInt(empMatch[1]);
+            }
+            
+            // Parse industries - be more comprehensive
+            const industries: string[] = [];
+            
+            // First look for industry lists with specific context (e.g., "in SaaS/tech/Finance industry")
+            const industryContextPattern = /(?:in|for|targeting)\s+([A-Za-z/,\s]+?)\s+(?:industry|industries|sector|companies)/gi;
+            let contextMatch;
+            while ((contextMatch = industryContextPattern.exec(text)) !== null) {
+              if (contextMatch[1]) {
+                // Split by common separators
+                const industryList = contextMatch[1].split(/[,/]|\s+or\s+|\s+and\s+/gi);
+                industryList.forEach(ind => {
+                  const cleaned = ind.trim();
+                  if (cleaned && !industries.includes(cleaned)) {
+                    industries.push(cleaned);
+                  }
+                });
+              }
+            }
+            
+            // If no industries found with context, look for slash/comma separated lists
             if (industries.length === 0) {
-              // Extract capitalized words/phrases that could be industries
-              const capitalizedWords = text.match(/[A-Z][a-zA-Z]+/g);
-              if (capitalizedWords) {
-                // Filter out common non-industry words
-                const nonIndustryWords = ['High', 'Low', 'Budget', 'Enterprise', 'Priority', 'Target'];
-                industries.push(...capitalizedWords.filter(word => !nonIndustryWords.includes(word)));
+              // Look for patterns like "SaaS/tech/Finance" or "Tech, Finance, Healthcare"
+              const listPattern = /\b([A-Za-z]+(?:[/-][A-Za-z]+)+)\b/g;
+              let listMatch;
+              while ((listMatch = listPattern.exec(text)) !== null) {
+                const parts = listMatch[1].split(/[/,-]/);
+                parts.forEach(part => {
+                  const cleaned = part.trim();
+                  if (cleaned && !industries.includes(cleaned)) {
+                    industries.push(cleaned);
+                  }
+                });
               }
             }
             
+            // Also check for standalone industry mentions
+            const standalonePattern = /\b(SaaS|Tech|Technology|Finance|Financial|Healthcare|Retail|Manufacturing|Software)\b/gi;
+            let standaloneMatch;
+            while ((standaloneMatch = standalonePattern.exec(text)) !== null) {
+              const ind = standaloneMatch[1];
+              if (!industries.some(i => i.toLowerCase() === ind.toLowerCase())) {
+                industries.push(ind);
+              }
+            }
+            
+            console.log('[CRITERIA] Parsed industries:', industries);
             criteria.targetIndustries = industries;
             
-            // Parse budget - look for patterns like "$200k", ">$200k", "Budget >$200k"
-            const budgetMatch = text.match(/(?:budget|Budget)?\s*[>]?\s*\$?([\d,]+)(k|m)?/i);
-            if (budgetMatch) {
-              let budget = parseInt(budgetMatch[1].replace(/,/g, ''));
-              // Handle k/m suffixes - only if explicitly present in the match
-              const suffix = budgetMatch[2];
-              if (suffix?.toLowerCase() === 'k') {
-                budget *= 1000;
-              } else if (suffix?.toLowerCase() === 'm') {
-                budget *= 1000000;
+            // Parse budget - look for patterns like "$200k", ">$200k", "Budget >$200k", "Budget > $200,000"
+            // Try multiple patterns to catch different formats
+            const budgetPatterns = [
+              /[Bb]udget\s*[>>=]+\s*\$?([\d,]+)(k|m)?/i,  // Budget >$200k or Budget > 200k
+              />\s*\$?([\d,]+)(k|m)/i,                      // >$200k or >200k
+              /\$?([\d,]+)(k|m)\s+budget/i,                 // 200k budget
+              /budget.*?\$?([\d,]+)(k|m)/i,                 // budget ... $200k
+              /\$?([\d,]+)(k|m)/i                           // Just 200k anywhere
+            ];
+            
+            let budgetFound = false;
+            for (const pattern of budgetPatterns) {
+              const budgetMatch = text.match(pattern);
+              if (budgetMatch && !budgetFound) {
+                let budget = parseInt(budgetMatch[1].replace(/,/g, ''));
+                // Handle k/m suffixes
+                const suffix = budgetMatch[2];
+                if (suffix?.toLowerCase() === 'k') {
+                  budget *= 1000;
+                } else if (suffix?.toLowerCase() === 'm') {
+                  budget *= 1000000;
+                }
+                criteria.minBudget = budget;
+                console.log('[CRITERIA] Parsed budget:', budget, 'from:', budgetMatch[0]);
+                budgetFound = true;
+                break;
               }
-              criteria.minBudget = budget;
-              console.log('[CRITERIA] Parsed budget:', budget, 'from:', budgetMatch[0]);
             }
             
             return criteria;
@@ -142,10 +243,12 @@ export class ToolRegistry {
             update: {
               companyName: params.companyName,
               contactName: params.contactName,
+              budget: params.budget ? String(params.budget) : undefined,
+              linkedinUrl: params.linkedin || undefined,
+              notes: params.notes || undefined,
               companyData: {
                 size: params.employees,
-                industry: params.industry,
-                budget: params.budget
+                industry: params.industry
               },
               website: params.website || undefined
             },
@@ -154,10 +257,12 @@ export class ToolRegistry {
               contactName: params.contactName,
               email: params.email,
               website: params.website,
+              linkedinUrl: params.linkedin || undefined,
+              notes: params.notes || undefined,
+              budget: params.budget ? String(params.budget) : undefined,
               companyData: {
                 size: params.employees,
-                industry: params.industry,
-                budget: params.budget
+                industry: params.industry
               }
             }
           });
@@ -167,119 +272,207 @@ export class ToolRegistry {
           let maxScore = 0;
           const breakdown: any[] = [];
           
-          // Score company size (40 points max)
-          maxScore += 40;
+          // Score company size (using weight from criteria)
+          const sizeWeight = criteria.weights.size;
+          maxScore += sizeWeight;
           if (params.employees) {
-            if (criteria.minEmployees > 0) {
+            let sizeScore = 0;
+            let sizeDetails = '';
+            
+            // Check if we have employee ranges defined
+            if (criteria.employeeRanges && criteria.employeeRanges.length > 0) {
+              // Sort ranges by min value descending to check from highest threshold first
+              const sortedRanges = [...criteria.employeeRanges].sort((a, b) => (b.min || 0) - (a.min || 0));
+              
+              for (const range of sortedRanges) {
+                if (range.max !== undefined) {
+                  // Has upper bound (e.g., under 30)
+                  if (params.employees < range.max) {
+                    sizeScore = range.points;
+                    sizeDetails = `${params.employees} employees (under ${range.max} threshold)`;
+                    break;
+                  }
+                } else if (params.employees >= range.min) {
+                  // Has lower bound (e.g., >100, >50)
+                  sizeScore = range.points;
+                  sizeDetails = `${params.employees} employees (above ${range.min} threshold)`;
+                  break;
+                }
+              }
+              
+              // If no range matched, provide proportional scoring
+              if (sizeScore === 0) {
+                // Find which range the employee count falls between
+                const highRange = sortedRanges.find(r => !r.max && params.employees < r.min);
+                const lowRange = sortedRanges.find(r => r.max && params.employees >= r.max);
+                
+                if (highRange && lowRange) {
+                  // Interpolate between ranges
+                  sizeScore = (highRange.points + lowRange.points) / 2;
+                  sizeDetails = `${params.employees} employees (between thresholds)`;
+                } else if (highRange && !lowRange) {
+                  // Below all thresholds - give proportional points
+                  const proportion = params.employees / highRange.min;
+                  sizeScore = Math.round(highRange.points * proportion * 0.5); // Up to 50% of threshold points
+                  sizeDetails = `${params.employees} employees (${Math.round(proportion * 100)}% of ${highRange.min} threshold)`;
+                } else {
+                  // No specific ranges, use proportional scoring
+                  const proportion = Math.min(params.employees / 100, 1); // Assume 100 as baseline
+                  sizeScore = Math.round(sizeWeight * proportion * 0.3); // Up to 30% of weight
+                  sizeDetails = `${params.employees} employees`;
+                }
+              }
+            } else if (criteria.minEmployees > 0) {
+              // Fallback to simple threshold
               if (params.employees >= criteria.minEmployees) {
-                score += 40;
-                breakdown.push({
-                  category: 'Company Size',
-                  score: 40,
-                  maxScore: 40,
-                  details: `${params.employees} employees exceeds minimum of ${criteria.minEmployees}`
-                });
+                sizeScore = sizeWeight;
+                sizeDetails = `${params.employees} employees exceeds minimum of ${criteria.minEmployees}`;
               } else {
-                breakdown.push({
-                  category: 'Company Size',
-                  score: 0,
-                  maxScore: 40,
-                  details: `${params.employees} employees below minimum of ${criteria.minEmployees}`
-                });
+                sizeScore = 0;
+                sizeDetails = `${params.employees} employees below minimum of ${criteria.minEmployees}`;
               }
             } else {
-              // Default size scoring
-              const sizeScore = params.employees >= 500 ? 40 : params.employees >= 100 ? 30 : params.employees >= 50 ? 20 : 10;
-              score += sizeScore;
-              breakdown.push({
-                category: 'Company Size',
-                score: sizeScore,
-                maxScore: 40,
-                details: `${params.employees} employees`
-              });
+              // Default size scoring (scale to weight) - only if no specific criteria given
+              const baseScore = params.employees >= 500 ? 1.0 : params.employees >= 100 ? 0.75 : params.employees >= 50 ? 0.5 : 0.25;
+              sizeScore = baseScore * sizeWeight;
+              sizeDetails = `${params.employees} employees`;
             }
+            
+            score += sizeScore;
+            breakdown.push({
+              category: 'Company Size',
+              score: sizeScore,
+              maxScore: sizeWeight,
+              details: sizeDetails
+            });
           }
           
-          // Score industry (40 points max)
-          maxScore += 40;
+          // Score industry (using weight from criteria)
+          const industryWeight = criteria.weights.industry;
+          maxScore += industryWeight;
           if (params.industry) {
             if (criteria.targetIndustries.length > 0) {
-              const industryMatch = criteria.targetIndustries.some(ind => 
-                params.industry?.toLowerCase().includes(ind.toLowerCase())
-              );
+              // Check if the lead's industry matches any target industry (case-insensitive)
+              const industryMatch = criteria.targetIndustries.some(ind => {
+                const indLower = ind.toLowerCase();
+                const paramIndLower = params.industry?.toLowerCase() || '';
+                
+                // Check for exact match or partial match
+                // Handle variations like "Tech" matching "Technology", "SaaS" matching "Software"
+                const variations: Record<string, string[]> = {
+                  'tech': ['technology', 'tech', 'technical'],
+                  'technology': ['technology', 'tech', 'technical'],
+                  'saas': ['saas', 'software', 'software as a service'],
+                  'software': ['software', 'saas'],
+                  'finance': ['finance', 'financial', 'fintech', 'banking'],
+                  'financial': ['finance', 'financial', 'fintech', 'banking'],
+                  'healthcare': ['healthcare', 'health', 'medical', 'pharma'],
+                  'health': ['healthcare', 'health', 'medical'],
+                  'retail': ['retail', 'ecommerce', 'e-commerce'],
+                  'ecommerce': ['retail', 'ecommerce', 'e-commerce']
+                };
+                
+                // Direct match
+                if (paramIndLower === indLower) return true;
+                
+                // Check variations
+                const indVariations = variations[indLower] || [indLower];
+                const paramVariations = variations[paramIndLower] || [paramIndLower];
+                
+                return indVariations.some(v1 => paramVariations.includes(v1));
+              });
+              
               if (industryMatch) {
-                score += 40;
+                score += industryWeight;
                 breakdown.push({
                   category: 'Industry Fit',
-                  score: 40,
-                  maxScore: 40,
+                  score: industryWeight,
+                  maxScore: industryWeight,
                   details: `${params.industry} matches target criteria`
                 });
               } else {
                 breakdown.push({
                   category: 'Industry Fit',
                   score: 0,
-                  maxScore: 40,
-                  details: `${params.industry} does not match target industries`
+                  maxScore: industryWeight,
+                  details: `${params.industry} does not match target industries (${criteria.targetIndustries.join(', ')})`
                 });
               }
             } else {
-              // Default industry scoring
-              const industryScore = /saas|tech|software/i.test(params.industry) ? 40 : 20;
+              // Default industry scoring (scale to weight)
+              const baseScore = /saas|tech|software/i.test(params.industry) ? 1.0 : 0.5;
+              const industryScore = baseScore * industryWeight;
               score += industryScore;
               breakdown.push({
                 category: 'Industry Fit',
                 score: industryScore,
-                maxScore: 40,
+                maxScore: industryWeight,
                 details: params.industry
               });
             }
           }
           
-          // Score budget (20 points max)
-          maxScore += 20;
+          // Score budget/intent (using weight from criteria)
+          const intentWeight = criteria.weights.intent;
+          maxScore += intentWeight;
           if (params.budget) {
             if (criteria.minBudget > 0) {
               if (params.budget >= criteria.minBudget) {
-                score += 20;
+                score += intentWeight;
                 breakdown.push({
                   category: 'Budget',
-                  score: 20,
-                  maxScore: 20,
+                  score: intentWeight,
+                  maxScore: intentWeight,
                   details: `$${params.budget.toLocaleString()} exceeds minimum of $${criteria.minBudget.toLocaleString()}`
                 });
               } else {
-                const partialScore = Math.round((params.budget / criteria.minBudget) * 20);
+                const partialScore = Math.round((params.budget / criteria.minBudget) * intentWeight);
                 score += partialScore;
                 breakdown.push({
                   category: 'Budget',
                   score: partialScore,
-                  maxScore: 20,
+                  maxScore: intentWeight,
                   details: `$${params.budget.toLocaleString()} is ${Math.round((params.budget / criteria.minBudget) * 100)}% of target`
                 });
               }
             } else {
-              // Default budget scoring
-              const budgetScore = params.budget >= 200000 ? 20 : params.budget >= 100000 ? 15 : params.budget >= 50000 ? 10 : 5;
+              // Default budget scoring (scale to weight)
+              const baseScore = params.budget >= 200000 ? 1.0 : params.budget >= 100000 ? 0.75 : params.budget >= 50000 ? 0.5 : 0.25;
+              const budgetScore = baseScore * intentWeight;
               score += budgetScore;
               breakdown.push({
                 category: 'Budget',
                 score: budgetScore,
-                maxScore: 20,
+                maxScore: intentWeight,
                 details: `$${params.budget.toLocaleString()}`
               });
             }
           }
           
-          // Normalize to 100
-          const finalScore = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+          // The score is already out of 100 if using percentage weights (40%, 30%, 30%)
+          // Don't normalize again if maxScore is already 100
+          const finalScore = maxScore === 100 ? Math.round(score) : 
+                             maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
           
           console.log('[TOOL] Score calculation:', { score, maxScore, finalScore, breakdown });
           
-          // Save the score to the database
+          // Determine stage based on score
+          let stage = 'NEW';
+          if (finalScore >= 80) {
+            stage = 'QUALIFIED';
+          } else if (finalScore >= 60) {
+            stage = 'CONTACTED';
+          } else if (finalScore >= 40) {
+            stage = 'NEW';
+          }
+          
+          // Save the score and stage to the database
           await prisma.lead.update({
             where: { id: lead.id },
-            data: { score: finalScore }
+            data: { 
+              score: finalScore,
+              stage: stage as any
+            }
           });
           
           // Log activity

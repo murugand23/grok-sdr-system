@@ -117,40 +117,22 @@ export default function LeadsPage() {
       <div className="bg-white rounded-lg shadow-sm p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-gray-900">Lead Pipeline</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={recalculateAllScores}
-              disabled={recalculating}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              {recalculating ? (
-                <>
-                  <span className="animate-spin">⟳</span>
-                  Recalculating...
-                </>
-              ) : (
-                <>
-                  📊 Recalculate All Scores
-                </>
-              )}
-            </button>
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              {isRefreshing ? (
-                <>
-                  <span className="animate-spin">⟳</span>
-                  Refreshing...
-                </>
-              ) : (
-                <>
-                  🔄 Refresh
-                </>
-              )}
-            </button>
-          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {isRefreshing ? (
+              <>
+                <span className="animate-spin">⟳</span>
+                Refreshing...
+              </>
+            ) : (
+              <>
+                🔄 Refresh
+              </>
+            )}
+          </button>
         </div>
         
         <div className="mb-4">

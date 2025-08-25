@@ -14,6 +14,10 @@ const CreateLeadSchema = z.object({
   phone: z.string().optional(),
   website: z.string().url().optional(),
   linkedinUrl: z.string().url().optional(),
+  budget: z.string().optional(),
+  source: z.string().optional(),
+  notes: z.string().optional(),
+  qualificationNotes: z.string().optional(),
   companyData: z.object({
     industry: z.string().optional(),
     size: z.union([z.string(), z.number()]).optional(),
