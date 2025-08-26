@@ -1,5 +1,7 @@
 # Grok-Powered SDR (Sales Development Representative) System
 
+https://www.loom.com/share/4c14875d2afa4d59877d2cd7cc4e886f?sid=699feb48-605b-4bf9-9bc3-e5fef16589ee
+
 An intelligent Sales Development Representative system leveraging Grok's API to enhance and automate the sales prospecting process.
 
 ## Working Features ✅
