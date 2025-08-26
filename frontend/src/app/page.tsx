@@ -91,13 +91,37 @@ ${leadDescription}`;
         conversationId
       });
 
-      const { conversationId: convId, messages: assistantMessages } = response.data;
+      const { conversationId: convId, messages: assistantMessages, structuredData } = response.data;
+      
+      console.log('[FRONTEND] Response data:', response.data);
+      console.log('[FRONTEND] Structured data:', structuredData);
       
       if (convId && !conversationId) {
         setConversationId(convId);
       }
 
-      // Process the response to extract score and breakdown
+      // Check if structured data is available
+      if (structuredData) {
+        // Use structured data directly
+        const result: ScoreResult = {
+          score: structuredData.score,
+          breakdown: structuredData.breakdown,
+          recommendation: structuredData.recommendation,
+          suggestedStage: structuredData.score >= 80 ? 'QUALIFIED' : structuredData.score >= 60 ? 'CONTACTED' : 'NEW'
+        };
+        
+        // Extract lead ID if present
+        if (structuredData.leadId) {
+          setSavedLeadId(structuredData.leadId);
+        }
+        
+        setScoreResult(result);
+        setCurrentStage(result.suggestedStage);
+        setIsScoring(false);
+        return;
+      }
+
+      // Fallback to parsing from natural language response
       const aiContent = assistantMessages[0]?.content || '';
       
       // Extract lead ID if present
@@ -390,7 +414,7 @@ ${leadDescription}`;
                   Enterprise Focus
                 </button>
                 <button 
-                  onClick={() => setScoringCriteria('Target: Growing startups (10-100 employees), any industry, showing growth signals')}
+                  onClick={() => setScoringCriteria('Target: Growing startups, >10 employees, Tech/SaaS industry, showing growth signals')}
                   className="text-xs text-blue-600 hover:underline block"
                 >
                   Startup Focus

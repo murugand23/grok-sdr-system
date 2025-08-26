@@ -70,8 +70,13 @@ router.post('/chat', async (req: Request, res: Response) => {
       }
     }
     
+    // Store structured data from tools - MUST reset for each new request
+    let structuredData: any = null;
+    
     // Handle tool calls if present
     while (response.tool_calls && response.tool_calls.length > 0) {
+      console.log('[AGENT CHAT] Processing tool calls:', response.tool_calls.length);
+      
       // Add assistant message with tool calls
       messages.push({
         role: 'assistant',
@@ -84,8 +89,16 @@ router.post('/chat', async (req: Request, res: Response) => {
         const toolName = toolCall.function.name;
         const toolArgs = JSON.parse(toolCall.function.arguments);
         
+        console.log('[AGENT CHAT] Executing tool:', toolName);
+        
         // Execute tool
         const toolResult = await toolRegistry.executeTool(toolName, toolArgs);
+        
+        // Store structured data for score_lead tool - ALWAYS update for new scores
+        if (toolName === 'score_lead' && toolResult.success) {
+          structuredData = toolResult.data;
+          console.log('[AGENT CHAT] Storing NEW structured data with score:', structuredData.score);
+        }
         
         // Add tool result to conversation
         messages.push({
@@ -114,13 +127,21 @@ router.post('/chat', async (req: Request, res: Response) => {
     // Return response (structured for future streaming support)
     // Only return the last assistant message (the new response)
     const lastAssistantMessage = messages.filter(m => m.role === 'assistant').pop();
+    
+    console.log('[AGENT CHAT] Sending response with structuredData:', structuredData ? 'YES' : 'NO');
+    if (structuredData) {
+      console.log('[AGENT CHAT] Structured data score:', structuredData.score);
+      console.log('[AGENT CHAT] Structured data breakdown items:', structuredData.breakdown?.length);
+    }
+    
     res.json({
       conversationId: savedConversation.id,
       messages: lastAssistantMessage ? [{
         role: lastAssistantMessage.role,
         content: lastAssistantMessage.content,
         tool_calls: lastAssistantMessage.tool_calls
-      }] : []
+      }] : [],
+      structuredData // Include structured data from tools
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
