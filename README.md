@@ -4,13 +4,13 @@ https://www.loom.com/share/4c14875d2afa4d59877d2cd7cc4e886f?sid=699feb48-605b-4b
 
 An intelligent Sales Development Representative system leveraging Grok's API to enhance and automate the sales prospecting process.
 
-## Working Features ✅
+## Working Features
 
 - **Lead Qualification & Scoring**: Automated lead scoring with customizable criteria and re-scoring capabilities
 - **Personalized Messaging**: AI-powered message personalization using Grok API for tailored outreach
 - **Evaluation Framework**: Systematic prompt engineering and performance testing with qualitative analysis
 
-## Features In Development 🚧
+## Features In Development
 
 - **Search Functionality**: Search through conversations and company metadata (has known bugs)
 - **Pipeline Progress Monitoring**: Lead tracking through sales stages (not fully implemented)
